@@ -1,2 +1,2 @@
-# predictiing_gas_prices
+# predicting_gas_prices
  
