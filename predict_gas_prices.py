@@ -305,7 +305,7 @@ def get_price_data(prices, uuid, fueltype):
     current_time=time.localtime()
     date_now=str(current_time[2])+"-"+str(current_time[1])+"-"+str(current_time[0])
     now=time.mktime(time.strptime(date_now, "%d-%m-%Y"))
-    data_resampled=time_sampling(data_sql, now-3600*24*7*12, data_sql.loc[data_sql.index[-1], 'date'], 300)###this one
+    data_resampled=time_sampling(data_sql, now-3600*24*7*12, data_sql.iloc[-1, 0], 300)###this one
     data_resampled=data_resampled.fillna(method='ffill').drop(index=0)
     
     data=transform_epoch_to_date(data_resampled)
