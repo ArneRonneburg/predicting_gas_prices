@@ -511,44 +511,44 @@ if __name__=="__main__":
         #thrd=th.Thread(target=start_thread, args=(nr, prices,stations, uuids, holidays, model, q))
         #thrd.start()###oldversion.....try with threads
     final=pd.DataFrame()###the final dataframe with the final data....wide format
-    for i in range(0, len(result)):
-        res=result[i] ###the different gas stations
-        for c in res.columns:
-            final[c]=np.asarray(res[c])
+    #for i in range(0, len(result)):
+    res=result ###the different gas stations
+    for c in res.columns:
+        final[c]=np.asarray(res[c])
     
     final.to_csv(path +"predictions/latest_width.txt", index=False)
     tba=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
     
     #fuel='diesel','e5
     ###rearrange from wide format to long format
-    for  uu in uuids:
-        for fuel in ['diesel', 'e5']:
-            uuid=uuids[uu]
+    # for  uu in uuids:
+    #     for fuel in ['diesel', 'e5']:
+    #         uuid=uuids[uu]
             
-            # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-date"
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-date"
-            DATE=final[column_title]
-            # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-prediction"
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-prediction"
-            PRED=final[column_title]
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-lowerCI"
-            LCI=final[column_title]
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-upperCI"
-            UCI=final[column_title]
-            # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-observation"
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-observation"
-            OBS=final[column_title]
-            appender=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
-            appender['date']=DATE
-            appender['prediction']=PRED ##predicted tat
-            appender['lowerCI']=LCI     #confidence interval
-            appender['upperCI']=UCI     #confidence interval
-            appender['observation']=OBS #the observed data
-            appender['fueltype']=[fuel]*len(PRED) #fueltype
-            appender['station']=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])
+    #         # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-date"
+    #         column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-date"
+    #         DATE=final[column_title]
+    #         # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-prediction"
+    #         column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-prediction"
+    #         PRED=final[column_title]
+    #         column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-lowerCI"
+    #         LCI=final[column_title]
+    #         column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-upperCI"
+    #         UCI=final[column_title]
+    #         # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-observation"
+    #         column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-observation"
+    #         OBS=final[column_title]
+    #         appender=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
+    #         appender['date']=DATE
+    #         appender['prediction']=PRED ##predicted tat
+    #         appender['lowerCI']=LCI     #confidence interval
+    #         appender['upperCI']=UCI     #confidence interval
+    #         appender['observation']=OBS #the observed data
+    #         appender['fueltype']=[fuel]*len(PRED) #fueltype
+    #         appender['station']=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])
             
-            tba=tba.append(appender)
-    tba.to_csv(path +"predictions/latest_long.txt", index=False)
+    #         tba=tba.append(appender)
+    # tba.to_csv(path +"predictions/latest_long.txt", index=False)
     
     ###this file is uploaded and visualized in tableau
     #https://public.tableau.com/app/profile/markus.g.hler7472/viz/Gasprice_16236148421350/Spritpreis
