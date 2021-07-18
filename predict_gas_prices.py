@@ -46,6 +46,15 @@ def start_process(data):
 
 
         data=add_holidays(data, holidays)
+        
+        
+        
+        
+        ###################################################################
+        data=add_weather(data, stations, uuid) #implement here...but also think about implementing in the prediction..
+        #####################################################################
+        
+        
         to_be_shown=pd.DataFrame([], columns=['date', 'prediction', 'lowerCI', 'upperCI', 'observation'])
 
         CI=0
@@ -97,6 +106,12 @@ def start_process(data):
         current_time=time.localtime()
         date_now=str(current_time[2])+"-"+str(current_time[1])+"-"+str(current_time[0])
         next_days=the_next_days(date_now, 3, holidays)###create X for next three days
+        
+        
+        ##################################################################################
+        next_days=add_weather(next_days, stations, uuid)#####implement here but also in the past
+        ##################################################################################
+        
         prediction=model.predict(next_days)
         
         confidence_interval=np.zeros(len(prediction))
@@ -310,6 +325,128 @@ def get_price_data(prices, uuid, fueltype):
     
     data=transform_epoch_to_date(data_resampled)
     return data
+
+from datetime import datetime
+def get_weather_past(latitude, longitude, start_date, end_date=datetime.now()):
+    """returns min temp, max temp, rain amount, wind spd, sun hours seems not to work"""
+    from meteostat import Daily
+    from meteostat import Stations
+    stations = Stations()
+    stations = stations.nearby(latitude, longitude)##latitude, longitude
+    station = stations.fetch(1).reset_index()
+    
+    data = Daily(station['id'][0], start_date, end_date)
+    data = data.fetch()
+    data = data.reset_index()
+    final=pd.DataFrame([])
+    final['date']=data['time']
+    final['tmin']=data['tmin']
+    final['tmax']=data['tmax']
+    final['rain']=data['prcp']
+    final['wind']=data['wspd'].fillna(value=0)
+    
+    
+    return final
+
+##x=get_weather_past(lat, long, start)
+
+
+def get_nearby(stations, lat, long):
+    
+    a=np.array(stations.latitude - lat)**2 + np.array(stations.longitude-long)**2
+    index=np.argmin(a)
+    return [stations.iloc[index].station_id]
+
+from wetterdienst import Wetterdienst, Resolution, Period
+import time
+from wetterdienst.provider.dwd.forecast import DwdMosmixType
+
+
+def get_weather_forecast(lat, long):
+    """for each day in the dataset, get max temp, min temp, max wind, rain amount for the next days"""
+    
+    #check if there is a time gap /etc between historical data and forecast
+    #check the units of wind speed and rain and compare to meteostat stuff
+    API = Wetterdienst(provider="dwd", kind="forecast")
+    params=['temperature_air_200','wind_speed', 'precipitation_consist_last_1h']
+    stations = API(parameter='large', mosmix_type=DwdMosmixType.LARGE)
+    stationen=stations.all().df
+    ids=get_nearby(stationen, lat, long)
+    forecast_stations = API(parameter=params, mosmix_type=DwdMosmixType.LARGE).filter_by_station_id(station_id=ids)
+    forecast=forecast_stations.values.all().df
+    rain=forecast[forecast.parameter=='precipitation_consist_last_1h']
+    temp=forecast[forecast.parameter=='temperature_air_200']
+    wind=forecast[forecast.parameter=='wind_speed']
+    year=time.localtime()[0]
+    month=time.localtime()[1]
+    day=time.localtime()[2]
+    time_int=np.zeros(len(rain))
+    for i in range(0, len(rain.date)):
+        time_int[i]=time.mktime(rain.iloc[i, 3].timetuple())+3600##since the data is in UTC
+    today=time.mktime(time.strptime(str(year)+"-"+str(month) + "-"+str(day), "%Y-%m-%d"))
+    final=pd.DataFrame([], columns=["date", "rain", "tmin", "tmax", "wind"])
+    
+    cur_day=today
+    for j in range(0, 3):
+        cur_day=cur_day+86400
+        rainval=0
+        temps=[]
+        windspd=[]    
+        for i in range(0, len(time_int)):
+            
+            if time_int[i]>cur_day and time_int[i]<cur_day+3600*24:
+                rainval=rainval+rain.iloc[i].value
+                temps.append(temp.iloc[i].value)
+                windspd.append(wind.iloc[i].value)
+        tba=pd.DataFrame([], columns=["date", "rain", "tmin", "tmax", "wind"])
+        tba['date']=[cur_day]
+        tba['rain']=[rainval]
+        tba['tmin']=[np.min(temps)-273.16]
+        tba['tmax']=[np.max(temps)-273.16]##dwd uses kelvin
+        tba['wind']=[np.max(windspd)]
+        final=final.append(tba, ignore_index=True)
+        
+    return final
+
+def add_weather(data, stations, uuid):
+    
+    
+    lat=float(stations[stations.uuid==uuid].latitude)
+    long=float(stations[stations.uuid==uuid].longitude)
+    """past data = 
+    forecast data = 
+    add_data via timestamp"""
+    ten_days_ago=time.time()-86400*100
+    start_time=datetime(time.localtime(ten_days_ago)[0], time.localtime(ten_days_ago)[1], time.localtime(ten_days_ago)[2])
+    past_weather=get_weather_past(lat, long, start_time)
+    future_weather=get_weather_forecast(lat,long)
+    for i in range(0, len(past_weather)):    
+        past_weather.date.iloc[i]=time.mktime(past_weather.date.iloc[i].timetuple())
+    weather=pd.concat((past_weather, future_weather), ignore_index=True)
+    times=np.transpose(epoch_to_date(np.asarray(weather.date)))
+
+    weather['year']=times[0]
+    weather['month']=times[1]
+    weather['day']=times[2]
+    weather=weather.drop(columns='date')
+    data['tmin']=0
+    data['tmax']=0
+    data['wind']=0
+    data['rain']=0
+    for i in range(0, len(weather)):
+        #get rid of errors here...
+        cday=weather.day.iloc[i]
+        cmonth=weather.month.iloc[i]
+        cyear=weather.year.iloc[i]
+        index=list(data[data.day==cday][data.month==cmonth][data.year==cyear].index)
+        data['tmin'][index]=float(weather.iloc[i].tmin)
+        data['tmax'][index]=float(weather.iloc[i].tmax)
+        data['wind'][index]=float(weather.iloc[i].wind)
+        data['rain'][index]=float(weather.iloc[i].rain)
+        
+    return data
+
+
 
 
 if __name__=="__main__":
