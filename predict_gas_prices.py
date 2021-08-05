@@ -31,7 +31,9 @@ import pandas as pd
 import queue
 
 from sqlalchemy import create_engine
-
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 
 def start_process(data):
@@ -463,9 +465,6 @@ if __name__=="__main__":
     path_json=r"C:\Users\Arne\Documents\DataScience/" #a key file for the upload of the results to google sheets
     # branch_prices=os.listdir(path_prices)
     # while True:
-    update_repo(path_git, path_os)  #this pulls the newest data from the tankerkoenig repo
-    stations=pd.read_csv(path_os+'stations/stations.csv')#here the list of gas stations is read
-    ##this is the list of gasoline stations for which a prediction is created
     uuids={'jet_potsdam':'51d4b4f2-a095-1aa0-e100-80009459e03a',#, '14469'
     'aral_potsdam':'3e17a2ae-db29-425f-895d-f841d817309a',#, '14469'
     'aral_Waldstadt': 'a08e4d7e-8159-4f85-a299-0885478c8186',#14478
@@ -488,88 +487,143 @@ if __name__=="__main__":
     uuid_liste=[]
     for i in uuids:
         uuid_liste.append(uuids[i])
-    # plzliste=['14469', '14467','14478', '16909','14641', '22309', '18279']
-    prices=get_pricelist(uuid_liste, path_os, time.mktime(time.strptime("2021-01-01","%Y-%m-%d")), 1)
-    ###create the pricelist for the given list of uuids - starting from 01.01.2021
     
-    ###add the data transformation now to the final timestamping with 5 minutes and so on. Then introduce the model. 
-    
-    time.sleep(10)
-    model=ExtraTreesRegressor(n_estimators=100)##this is our model. DONT USE MULTIPROCESSING HERE!!!!
-    final=pd.DataFrame([])##the final dataframe
-    
-    os.makedirs(path +"predictions/", exist_ok=True)#create the folder for the result file, if does not exist yet
-    
-    pool=mp.Pool()        #pool for parallel execution of the predictions for the different gas stations
-    
-    processdata=[]###just a list for the data for the different processes.
-    for nr in range(0, len(uuids)):
-        print(nr)
-        processdata.append([nr, prices,stations, uuids, holidays, model])
-    result=pool.map(start_process, processdata)###multiprocessing of the predictions.
-    
-        #thrd=th.Thread(target=start_thread, args=(nr, prices,stations, uuids, holidays, model, q))
-        #thrd.start()###oldversion.....try with threads
-    final=pd.DataFrame()###the final dataframe with the final data....wide format
-    for i in range(0, len(result)):
-        res=result[i] ###the different gas stations
-        for c in res.columns:
-            final[c]=np.asarray(res[c])
-    
-    final.to_csv(path +"predictions/latest_width.txt", index=False)
-    tba=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
-    
-    #fuel='diesel','e5
-    ###rearrange from wide format to long format
-    for  uu in uuids:
-        for fuel in ['diesel', 'e5']:
-            uuid=uuids[uu]
-            
-            # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-date"
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-date"
-            DATE=final[column_title]
-            # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-prediction"
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-prediction"
-            PRED=final[column_title]
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-lowerCI"
-            LCI=final[column_title]
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-upperCI"
-            UCI=final[column_title]
-            # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-observation"
-            column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-observation"
-            OBS=final[column_title]
-            appender=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
-            appender['date']=DATE
-            appender['prediction']=PRED ##predicted tat
-            appender['lowerCI']=LCI     #confidence interval
-            appender['upperCI']=UCI     #confidence interval
-            appender['observation']=OBS #the observed data
-            appender['fueltype']=[fuel]*len(PRED) #fueltype
-            appender['station']=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])
-            
-            tba=tba.append(appender)
-    tba.to_csv(path +"predictions/latest_long.txt", index=False)
-    
-    ###this file is uploaded and visualized in tableau
-    #https://public.tableau.com/app/profile/markus.g.hler7472/viz/Gasprice_16236148421350/Spritpreis
-    ###
-    
+    for runs in range(0, 3):    
+        try:
         
-    import gspread # -- pip install gspread
-    from oauth2client.service_account import ServiceAccountCredentials # -- pip install oauth2client
-    import csv   
-    sheet = "data"
-    csv_data = path + "predictions/latest_long.txt"
-    scope =["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets',"https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(path_json+"gas-price-304619-7d6023c81c41.json", scope)
-    client = gspread.authorize(creds)
+            
+            update_repo(path_git, path_os)  #this pulls the newest data from the tankerkoenig repo
+            stations=pd.read_csv(path_os+'stations/stations.csv')#here the list of gas stations is read
+            ##this is the list of gasoline stations for which a prediction is created
+            
+            # plzliste=['14469', '14467','14478', '16909','14641', '22309', '18279']
+            prices=get_pricelist(uuid_liste, path_os, time.mktime(time.strptime("2021-01-01","%Y-%m-%d")), 1)
+            ###create the pricelist for the given list of uuids - starting from 01.01.2021
+            
+            ###add the data transformation now to the final timestamping with 5 minutes and so on. Then introduce the model. 
+            
+            time.sleep(10)
+            model=ExtraTreesRegressor(n_estimators=100)##this is our model. DONT USE MULTIPROCESSING HERE!!!!
+            final=pd.DataFrame([])##the final dataframe
+            
+            os.makedirs(path +"predictions/", exist_ok=True)#create the folder for the result file, if does not exist yet
+            
+            pool=mp.Pool()        #pool for parallel execution of the predictions for the different gas stations
+            
+            processdata=[]###just a list for the data for the different processes.
+            for nr in range(0, len(uuids)):
+                print(nr)
+                processdata.append([nr, prices,stations, uuids, holidays, model])
+            result=pool.map(start_process, processdata)###multiprocessing of the predictions.
+            
+                #thrd=th.Thread(target=start_thread, args=(nr, prices,stations, uuids, holidays, model, q))
+                #thrd.start()###oldversion.....try with threads
+            final=pd.DataFrame()###the final dataframe with the final data....wide format
+            for i in range(0, len(result)):
+                res=result[i] ###the different gas stations
+                for c in res.columns:
+                    final[c]=np.asarray(res[c])
+            
+            final.to_csv(path +"predictions/latest_width.txt", index=False)
+            tba=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
+            
+            #fuel='diesel','e5
+            ###rearrange from wide format to long format
+            for  uu in uuids:
+                for fuel in ['diesel', 'e5']:
+                    uuid=uuids[uu]
+                    
+                    # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-date"
+                    column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-date"
+                    DATE=final[column_title]
+                    # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-prediction"
+                    column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-prediction"
+                    PRED=final[column_title]
+                    column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-lowerCI"
+                    LCI=final[column_title]
+                    column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-upperCI"
+                    UCI=final[column_title]
+                    # column_title=str(stations[stations.uuid==uuid].brand)+","+str(stations[stations.uuid==uuid].street)+","+str(stations[stations.uuid==uuid].city)+"/"+str(fuel)+"-observation"
+                    column_title=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])+"/"+str(fuel)+"-observation"
+                    OBS=final[column_title]
+                    appender=pd.DataFrame([], columns=["date","prediction","lowerCI","upperCI","observation","station","fueltype"])
+                    appender['date']=DATE
+                    appender['prediction']=PRED ##predicted tat
+                    appender['lowerCI']=LCI     #confidence interval
+                    appender['upperCI']=UCI     #confidence interval
+                    appender['observation']=OBS #the observed data
+                    appender['fueltype']=[fuel]*len(PRED) #fueltype
+                    appender['station']=str(stations[stations.uuid==uuid].brand.iloc[0])+","+str(stations[stations.uuid==uuid].street.iloc[0])+","+str(stations[stations.uuid==uuid].city.iloc[0])
+                    
+                    tba=tba.append(appender)
+            tba.to_csv(path +"predictions/latest_long.txt", index=False)
+            
+            ###this file is uploaded and visualized in tableau
+            #https://public.tableau.com/app/profile/markus.g.hler7472/viz/Gasprice_16236148421350/Spritpreis
+            ###
+            
+                
+            import gspread # -- pip install gspread
+            from oauth2client.service_account import ServiceAccountCredentials # -- pip install oauth2client
+            import csv   
+            sheet = "data"
+            csv_data = path + "predictions/latest_long.txt"
+            scope =["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets',"https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
+            creds = ServiceAccountCredentials.from_json_keyfile_name(path_json+"gas-price-304619-7d6023c81c41.json", scope)
+            client = gspread.authorize(creds)
+            
+            spreadsheet = client.open("gasprice")
+            
+            
+            spreadsheet.values_update(
+                sheet,
+                params={'valueInputOption': 'USER_ENTERED'},
+                body={'values': list(csv.reader(open(csv_data)))}
+            )
+            ###implement mail reporting
+            
+        
+            sender_address = "gasprice90@gmail.com"
+            receiver_address = "arne.ronneburg@googlemail.com"
+            
+            mail_content = "Script was executed, prediction was updated. Greetings, your raspi."   
+            message = MIMEMultipart()
+            message['From'] = sender_address
+            message['To'] = receiver_address
+            message['Subject'] = 'Update of gasprice successful'   #The subject line
+            #The body and the attachments for the mail
+            message.attach(MIMEText(mail_content, 'plain'))
+            #Create SMTP session for sending the mail
+            session = smtplib.SMTP('smtp.gmail.com', 587) #use gmail with port
+            session.starttls() #enable security
+            credentials=open(r"C:\Users\Arne\Documents\DataScience/cred.txt").readlines()
+            session.login(sender_address, credentials[0]) 
+        
+            text = message.as_string()
+            session.sendmail(sender_address, receiver_address, text)
+            session.quit()
+            break
+        except Exception as e:
+            sender_address = "gasprice90@gmail.com"
+            receiver_address = "arne.ronneburg@googlemail.com"
+            
+            mail_content = "There was an error:"+str(e)   
+            message = MIMEMultipart()
+            message['From'] = sender_address
+            message['To'] = receiver_address
+            message['Subject'] = 'Error during updating gasprice successful'   #The subject line
+            #The body and the attachments for the mail
+            message.attach(MIMEText(mail_content, 'plain'))
+            #Create SMTP session for sending the mail
+            session = smtplib.SMTP('smtp.gmail.com', 587) #use gmail with port
+            session.starttls() #enable security
+            credentials=open(r"C:\Users\Arne\Documents\DataScience/cred.txt").readlines()
+            session.login(sender_address, credentials[0]) 
+        
+            text = message.as_string()
+            session.sendmail(sender_address, receiver_address, text)
+            session.quit()
     
-    spreadsheet = client.open("gasprice")
-    
-    
-    spreadsheet.values_update(
-        sheet,
-        params={'valueInputOption': 'USER_ENTERED'},
-        body={'values': list(csv.reader(open(csv_data)))}
-    )
     #run once per day
+    
+    #logging library
