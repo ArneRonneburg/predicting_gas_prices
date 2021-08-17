@@ -29,7 +29,7 @@ import os
 import time
 import pandas as pd
 import queue
-
+import sys
 from sqlalchemy import create_engine
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -606,8 +606,8 @@ if __name__=="__main__":
         except Exception as e:
             sender_address = "gasprice90@gmail.com"
             receiver_address = "arne.ronneburg@googlemail.com"
-            
-            mail_content = "There was an error:"+str(e)   
+            errorcode=sys.exc_info()
+            mail_content = "There was an error:"+str(errorcode)   
             message = MIMEMultipart()
             message['From'] = sender_address
             message['To'] = receiver_address
