@@ -617,7 +617,7 @@ if __name__=="__main__":
             #Create SMTP session for sending the mail
             session = smtplib.SMTP('smtp.gmail.com', 587) #use gmail with port
             session.starttls() #enable security
-            credentials=open(r"C:\Users\Arne\Documents\DataScience/cred.txt").readlines()
+            credentials=open(path_mail+"cred.txt").readlines()
             session.login(sender_address, credentials[0]) 
         
             text = message.as_string()
