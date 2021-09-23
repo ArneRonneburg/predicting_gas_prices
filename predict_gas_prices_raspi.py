@@ -37,6 +37,9 @@ from email.mime.text import MIMEText
 
 
 def start_process(data):
+    """main function. This function creates the prediction based on the gasoline data. 
+    A multiprocessing.pool is used to call this function simultaneously for all gasoline stations. Returns the prediction and observation + prediction forecast."""
+    
     nr, prices,stations, uuids, holidays, model=data
     uu=list(uuids.keys())[nr]
     final=pd.DataFrame([])
@@ -148,10 +151,12 @@ def start_process(data):
 
 
 def get_gas_prices(liste):
+    """a generator which iterates over the .csv files and returns the data"""
     for i in liste:
         yield pd.read_csv(i)
         
 def update_repo(path_git, path_os):
+    """pulls the newest gasoline data from the repository"""
     os.makedirs(path_os, exist_ok=True)
 #path_os=r"D:\hdd\gas_prices\data"
 #data=Repo.clone_from(path_git, path_os) #once it is downloaded, we can use the local data?
@@ -162,7 +167,7 @@ def update_repo(path_git, path_os):
 
 
 def get_station_list(liste, path_os):###
-    """insert a list of postal codes here...maybe using a list of uuids would be a nice idea"""
+    """insert a list of uuid codes here, together with the local path to the stations list"""
     gas_stations=pd.DataFrame([])
     path=path_os+'stations/stations.csv'
     stations=pd.read_csv(path)##this contains the different stations with city, uuuid, coordinates, brand, ...I'd stick to the coordinates. but this gives the brand attribute for free
@@ -175,7 +180,8 @@ def get_station_list(liste, path_os):###
 
 
 def get_station_info(data, liste, col):
-    """find a list of stations with given properties liste in col, e.g. a list of stations which have a postal code given in liste"""
+    """find a list of stations with given properties liste in col, e.g. a list of stations
+    which have a postal code given in liste"""
     
     df=pd.DataFrame([], columns=data.columns)
     for i in range(0, len(data)):
@@ -222,6 +228,7 @@ def get_pricelist(uuid_liste, path_os, starting_time, csize):
 
 
 def epoch_to_date(x):
+    """from a given number of seconds since the epoch, convert to (year, month, day, wday, minutes since midnight)"""
     a=np.zeros((len(x), 5))
     for i in range(0, len(x)):
         t=time.localtime(x[i])
@@ -229,7 +236,7 @@ def epoch_to_date(x):
     return a
 
 def modify_timestamp(x, timestamp="%Y-%m-%d %H:%M:%S"):
-    """year, month, day, weekday, hour, min"""
+    """read timestamp string and return a list with year, month, day, wday, hour, minutes"""
     dates=[]
     for a in range(0, len(x)):
         i=x.iloc[a]
@@ -239,6 +246,7 @@ def modify_timestamp(x, timestamp="%Y-%m-%d %H:%M:%S"):
     
 
 def get_epoch(x, timestamp="%Y-%m-%d %H:%M:%S"):
+    """get the seconds since the epoch from a timestamp"""
     dates=[]
     for a in range(0, len(x)):
         i=x.iloc[a]
@@ -247,16 +255,18 @@ def get_epoch(x, timestamp="%Y-%m-%d %H:%M:%S"):
     return dates
 
 def time_sampling(data, tmin, tmax, delta_t):
-       
+    """resample the gasoline data to a given time interval delta_T, since only changes are logged within the data.
+       tmin, tmax for the relevant timeframe in seconds since the epoch"""
     df=pd.DataFrame([], columns=['date', 'price'])
     df.loc[:,'date']=np.arange(tmin, tmax+delta_t, delta_t)
     for i in range(0, len(data)):
-        index=np.where(df.date > data.iloc[i, 0])[0][0]#########check here/optimize
+        index=np.where(df.date > data.iloc[i, 0])[0][0]
         df.iloc[index, 1]=data.iloc[i,-1]##the price is the last column
     return df
 
 
 def transform_epoch_to_date(data_sql):
+    """replaces the seconds since the epooch with the associated year, month, day, wday, and minutes since midnight"""
     data=pd.DataFrame([], columns=['date','price'])
     data['date']=data_sql['date']
     data['price']=data_sql['price']
@@ -280,6 +290,7 @@ def transform_epoch_to_date(data_sql):
 
 
 def add_holidays(data, holidays):
+    """adds the holidays column to the dataframe. 1 for holiday, zero otherwise"""
     hday=np.zeros(len(data))
     for i in range(0, len(data)):
         datum=data.iloc[i]
@@ -296,7 +307,7 @@ def add_holidays(data, holidays):
 
 def the_next_days(datum, n_days, holidays):
     """put in the date of the day where the prediction starts in the format 01.01.2021. 
-    N_days- should be self-explaining, right?"""
+    n_days- should be self-explaining, right?"""
     tstart=time.mktime(time.strptime(datum+";00:00:00", "%d-%m-%Y;%H:%M:%S"))
     t=np.arange(tstart, tstart+n_days*24*60*60, 300)
     times=np.transpose(epoch_to_date(np.asarray(t)))
@@ -306,7 +317,7 @@ def the_next_days(datum, n_days, holidays):
 
 def the_past_days(datum, n_days, holidays):
     """put in the date of the day where the prediction starts in the format 01.01.2021. 
-    N_days- should be self-explaining, right?"""
+    n_days- should be self-explaining, right?"""
     tstart=time.mktime(time.strptime(datum+";00:00:00", "%d-%m-%Y;%H:%M:%S"))
     t=np.arange(tstart-n_days*24*60*60, tstart, 300)
     times=np.transpose(epoch_to_date(np.asarray(t)))
@@ -315,7 +326,8 @@ def the_past_days(datum, n_days, holidays):
     return X
 
 def get_price_data(prices, uuid, fueltype):
-    #something here is creating errors
+    """returns the prices of the gas station with the uuid and fueltype (one of e5, diesel). 
+    Returns the date in year, month, day, wday, minutes since midnight together with the price data"""
     data_sql=prices[prices.station_uuid==uuid].copy()###select a 
     data_sql.loc[:,'date']=get_epoch(data_sql.date)
     data_sql['price']=data_sql[fueltype]
@@ -412,14 +424,12 @@ def get_weather_forecast(lat, long):
 
 def add_weather(data, stations, uuid):
     
-    
+    """adds the weather data for the chosen gasoline station to the dataframe. Adds min and max temp, amound of rain and wind speed"""
     lat=float(stations[stations.uuid==uuid].latitude)
     long=float(stations[stations.uuid==uuid].longitude)
-    """past data = 
-    forecast data = 
-    add_data via timestamp"""
-    ten_days_ago=time.time()-86400*100
-    start_time=datetime(time.localtime(ten_days_ago)[0], time.localtime(ten_days_ago)[1], time.localtime(ten_days_ago)[2])
+
+    hundred_days_ago=time.time()-86400*100
+    start_time=datetime(time.localtime(hundred_days_ago)[0], time.localtime(hundred_days_ago)[1], time.localtime(hundred_days_ago)[2])
     past_weather=get_weather_past(lat, long, start_time)
     future_weather=get_weather_forecast(lat,long)
     for i in range(0, len(past_weather)):    
@@ -447,7 +457,6 @@ def add_weather(data, stations, uuid):
         data['rain'][index]=float(weather.iloc[i].rain)
         
     return data
-
 
 
 
