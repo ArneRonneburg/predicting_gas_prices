@@ -6,9 +6,9 @@ Created on Sun Jan 30 22:09:13 2022
 """
 
 import sys
-sys.path.append(r"C:\Users\local_admin\AppData\Roaming\Python\Python39\Scripts/")
-sys.path.append(r"D:\Profile\kyq\Anwendungsdaten\Python\Python39\Scripts/")
-sys.path.append(r"D:\Profile\kyq\Anwendungsdaten\Python\Python39\site-packages/")
+# sys.path.append(r"C:\Users\local_admin\AppData\Roaming\Python\Python39\Scripts/")
+sys.path.append(r"C:\Users\Arne\AppData\Roaming\Python\Python39\site-packages")
+sys.path.append(r"C:\users\arne\anaconda3\lib\site-packages/")
 # from git import Repo
 # import git
 import pandas as pd
@@ -45,7 +45,7 @@ from wetterdienst.provider.dwd.forecast import DwdMosmixType
 
 
 
-class station():
+class Station():
     def __init__(self, uuid, df_stations, path_to_data):
         self.uuid=uuid
         this_station=df_stations[df_stations.uuid == uuid]
@@ -155,21 +155,29 @@ class station():
             return final
 
 
-        def add_weather(n_days_ago):
+        def add_weather(year, month, day):
+            today=(str(datetime.now().year),str(datetime.now().month), str(datetime.now().day))
+            today_str=today[0]+"-"+(today[1] if len(today[1])>1 else "0"+today[1]) + "-"+(today[2] if len(today[2])>1 else "0"+today[2])
+            set_date=f"{year}-{month}-{day}"
+            today_seconds=time.mktime(time.strptime(today_str, "%Y-%m-%d"))
+            set_date_seconds=time.mktime(time.strptime(set_date, "%Y-%m-%d"))
+            past_present_future=("past" if set_date_seconds < today_seconds else ("future" if set_date_seconds > today_seconds else "present"))
             
             """adds the weather data for the chosen gasoline station to the dataframe. Adds min and max temp, amound of rain and wind speed"""
             lat=self.latitude
             long=self.longitude
-        
-            hundred_days_ago=time.time()-86400*int(n_days_ago)
-            start_time=datetime(time.localtime(hundred_days_ago)[0], time.localtime(hundred_days_ago)[1], time.localtime(hundred_days_ago)[2])
-            past_weather=get_weather_past(lat, long, start_time)
-            future_weather=get_weather_forecast(lat,long)
-            for i in range(0, len(past_weather)):    
-                past_weather.date.iloc[i]=time.mktime(past_weather.date.iloc[i].timetuple())
-            weather=pd.concat((past_weather, future_weather), ignore_index=True)
-            times=np.transpose(self.epoch_to_date(np.asarray(weather.date)))
-        
+            
+            # hundred_days_ago=time.time()-86400*int(n_days_ago)
+            # start_time=datetime(time.localtime(hundred_days_ago)[0], time.localtime(hundred_days_ago)[1], time.localtime(hundred_days_ago)[2])
+            # past_weather=get_weather_past(lat, long, start_time)
+            # future_weather=get_weather_forecast(lat,long)
+            # for i in range(0, len(past_weather)):    
+            #     past_weather.date.iloc[i]=time.mktime(past_weather.date.iloc[i].timetuple())
+            # weather=pd.concat((past_weather, future_weather), ignore_index=True)
+            # times=np.transpose(self.epoch_to_date(np.asarray(weather.date)))
+            if past_present_future=='past':
+                weather = get_weather_past(start_date, end_date)
+            weather=pd.DataFrame([])
             weather['year']=times[0]
             weather['month']=times[1]
             weather['day']=times[2]
@@ -196,6 +204,9 @@ class station():
     
         weather_data=add_weather(n_days_back)
         return weather_data
-    
+
+path = r"E:\gasprice/"
+station_df=pd.read_csv(r"E:\gasprice/stations.csv")
+station=Station("51d4b4f2-a095-1aa0-e100-80009459e03a", station_df,path)
     
     
