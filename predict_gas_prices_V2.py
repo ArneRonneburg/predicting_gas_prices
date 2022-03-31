@@ -42,171 +42,109 @@ from datetime import datetime
 from wetterdienst import Wetterdienst, Resolution, Period
 import time
 from wetterdienst.provider.dwd.forecast import DwdMosmixType
+def parse_date(string: str):
+    return time.mktime(time.strptime(string[:-3], "%Y-%m-%d %H:%M:%S"))
 
-
+def reshape_time_float(number):
+    t=time.localtime(number)
+    return t[0],t[1],t[2],t[3],t[4],t[6]
+def reformat_date(series):
+    dates=np.zeros((len(series),6))
+    for i in range(0, len(series)):
+        dates[i]=reshape_time_float(series[i])
+    return dates
 
 class Station():
-    def __init__(self, uuid, df_stations, path_to_data):
+    def __init__(self, uuid, df_stations):
         self.uuid=uuid
         this_station=df_stations[df_stations.uuid == uuid]
         self.latitude=this_station.latitude
         self.longitude=this_station.longitude
         self.brand=this_station.brand
         self.city=this_station.city
-            
-    def get_gasoline_data(self, n_days_back):
-        date=time.m
+        self.all_data=pd.DataFrame([])
+        self.time_sampling=300 #time sampling in seconds
+    
+    def sample_gas_weather(self, df):
+        date=df.iloc[0,0][:10]
+        start=parse_date(date + " 00:00:00   ")
+        end=parse_date(date + " 23:59:59   ")
+        index=np.arange(start, end, self.time_sampling)
+        df['epoch']=df['date'].apply(parse_date)
+        df_new=pd.DataFrame([], index=index, columns=['diesel','e5','e10'])
+        for line in range(1, len(df)):
+            # print(line)
+            t=df.iloc[line].loc['epoch']
+            # print(t)
+            l=np.where(t<=df_new.index)[0][0]
+            # print(l)
+            df_new.iloc[l]=df.iloc[line].loc[['diesel','e5','e10']]
+            # print(df.iloc[line].loc[['diesel','e5','e10']])
+        """use the df with gasoline data and resample it with a given time_sampling"""
+        gasData=df_new.copy()
+        year, month, day=date.split("-")
+        weatherData=self.get_weather(int(year), int(month), int(day))
         
+        df_new=pd.merge(gasData, weatherData, left_index=True, right_index=True)
+        df_new=df_new.fillna(method='ffill')
+        return df_new
         
-    def get_data_specific_day(self, year,month,day, path):
-        year_=str(year)
-        month_=(str(month) if len(str(month))==2 else "0"+str(month))
-        day_=(str(day) if len(str(day))==2 else "0"+str(day))
-        fname=year_+"-"+month_+"-"+day_+"-"+"prices.csv"
-        df=pd.read_csv(path + year_ + "/" + month_ + "/"+fname)
-        df=df[df.station_uuid==self.uuid]
-        df.drop(columns=['e5change','e10change','dieselchange'], inplace=True)
-        # df['date']=df['date'].apply(self.reshape_date)
-        
+    #data[['year', 'month', 'day', 'hour', 'minute', 'wday']]=reformat_date(data.tstamp)
+    def get_dataFrame(self, data: pd.DataFrame):
+        """select the gasoline data for the current station from a csv"""
+
+        # data=data.drop(columns=['e5change','e10change','dieselchange'])
+        df=data[data.station_uuid == self.uuid].drop(columns=['station_uuid', 'e5change','e10change','dieselchange'])
+        df=self.sample_gas_weather(df)
+        df[['year', 'month', 'day', 'hour', 'minute', 'wday']]=reformat_date(df.index.values)
+        df['latitude']=self.latitude
+        df['longitude']=self.longitude
         return df
         
-    
-    def get_weather(self, n_days_back):
-        from wetterdienst import Wetterdienst, Resolution, Period
-        import time
-        from wetterdienst.provider.dwd.forecast import DwdMosmixType
+        
+    def get_weather(self, year, month, day):
 
         latitude=self.latitude
         longitude=self.longitude
+        start=datetime(year, month, day)
+        end=datetime(year, month, day, 23, 59)
         
-        def get_weather_past(start_date, end_date):
-            
-            """returns min temp, max temp, rain amount, wind spd, sun hours seems not to work"""
-            from meteostat import Daily
-            from meteostat import Stations
+        """returns min temp, max temp, rain amount, wind spd, sun hours seems not to work"""
+        """prob implement an hourly update for the future"""
+        
+        from meteostat import Daily, Hourly
+        from meteostat import Stations
 
-            stations = Stations()
-            stations = stations.nearby(latitude, longitude)##latitude, longitude
-            station = stations.fetch(1).reset_index()
-            
-            data = Daily(station['id'][0], start_date, end_date)
-            data = data.fetch()
-            data = data.reset_index()
-            final=pd.DataFrame([])
-            final['date']=data['time']
-            final['tmin']=data['tmin']
-            final['tmax']=data['tmax']
-            final['rain']=data['prcp']
-            final['wind']=data['wspd'].fillna(value=0)
-            
-            
-            return final
+        stations = Stations()
+        stations = stations.nearby(latitude, longitude)##latitude, longitude
+        station = stations.fetch(1).reset_index()
+        
+        data = Hourly(station['id'][0], start, end)
+        data = data.fetch()
+        data = data.reset_index()
+        final=pd.DataFrame([])
+        final['date']=data['time']
+        # final['tmin']=data['tmin']
+        final['temp']=data['temp']
+        final['rain']=data['prcp']
+        final['wind']=data['wspd'].fillna(value=0)
+        
+        start=parse_date(str(final.date.iloc[0])+"   ")
+        end=start+86399
+        index=np.arange(start, end, self.time_sampling)
+        df_new=pd.DataFrame([], index=index, columns=['temp','rain','wind'])
+        for line in range(0, len(final)):
+            # print(line)
+            t=parse_date(str(final.iloc[line,0])+"   ")
+            # print(t)
+            l=np.where(t<=df_new.index)[0][0]
+            # print(l)
+            df_new.iloc[l]=final.iloc[line].loc[['temp','rain','wind']]
+        return df_new
 
-        def get_nearby(stations, lat, long):
-            
-            a=np.array(stations.latitude - lat)**2 + np.array(stations.longitude-long)**2
-            index=np.argmin(a)
-            return [stations.iloc[index].station_id]
-
-        def get_weather_forecast(lat, long):
-            """for each day in the dataset, get max temp, min temp, max wind, rain amount for the next days"""
-            
-            #check if there is a time gap /etc between historical data and forecast
-            #check the units of wind speed and rain and compare to meteostat stuff
-            API = Wetterdienst(provider="dwd", kind="forecast")
-            params=['temperature_air_200','wind_speed', 'precipitation_consist_last_1h']
-            stations = API(parameter='large', mosmix_type=DwdMosmixType.LARGE)
-            stationen=stations.all().df
-            ids=get_nearby(stationen, lat, long)
-            forecast_stations = API(parameter=params, mosmix_type=DwdMosmixType.LARGE).filter_by_station_id(station_id=ids)
-            forecast=forecast_stations.values.all().df
-            rain=forecast[forecast.parameter=='precipitation_consist_last_1h']
-            temp=forecast[forecast.parameter=='temperature_air_200']
-            wind=forecast[forecast.parameter=='wind_speed']
-            year=time.localtime()[0]
-            month=time.localtime()[1]
-            day=time.localtime()[2]
-            time_int=np.zeros(len(rain))
-            for i in range(0, len(rain.date)):
-                time_int[i]=time.mktime(rain.iloc[i, 3].timetuple())+3600##since the data is in UTC
-            today=time.mktime(time.strptime(str(year)+"-"+str(month) + "-"+str(day), "%Y-%m-%d"))
-            final=pd.DataFrame([], columns=["date", "rain", "tmin", "tmax", "wind"])
-            
-            cur_day=today
-            for j in range(0, 3):
-                cur_day=cur_day+86400
-                rainval=0
-                temps=[]
-                windspd=[]    
-                for i in range(0, len(time_int)):
-                    
-                    if time_int[i]>cur_day and time_int[i]<cur_day+3600*24:
-                        rainval=rainval+rain.iloc[i].value
-                        temps.append(temp.iloc[i].value)
-                        windspd.append(wind.iloc[i].value)
-                tba=pd.DataFrame([], columns=["date", "rain", "tmin", "tmax", "wind"])
-                tba['date']=[cur_day]
-                tba['rain']=[rainval]
-                tba['tmin']=[np.min(temps)-273.16]
-                tba['tmax']=[np.max(temps)-273.16]##dwd uses kelvin
-                tba['wind']=[np.max(windspd)]
-                final=final.append(tba, ignore_index=True)
-                
-            return final
-
-
-        def add_weather(year, month, day):
-            today=(str(datetime.now().year),str(datetime.now().month), str(datetime.now().day))
-            today_str=today[0]+"-"+(today[1] if len(today[1])>1 else "0"+today[1]) + "-"+(today[2] if len(today[2])>1 else "0"+today[2])
-            set_date=f"{year}-{month}-{day}"
-            today_seconds=time.mktime(time.strptime(today_str, "%Y-%m-%d"))
-            set_date_seconds=time.mktime(time.strptime(set_date, "%Y-%m-%d"))
-            past_present_future=("past" if set_date_seconds < today_seconds else ("future" if set_date_seconds > today_seconds else "present"))
-            
-            """adds the weather data for the chosen gasoline station to the dataframe. Adds min and max temp, amound of rain and wind speed"""
-            lat=self.latitude
-            long=self.longitude
-            
-            # hundred_days_ago=time.time()-86400*int(n_days_ago)
-            # start_time=datetime(time.localtime(hundred_days_ago)[0], time.localtime(hundred_days_ago)[1], time.localtime(hundred_days_ago)[2])
-            # past_weather=get_weather_past(lat, long, start_time)
-            # future_weather=get_weather_forecast(lat,long)
-            # for i in range(0, len(past_weather)):    
-            #     past_weather.date.iloc[i]=time.mktime(past_weather.date.iloc[i].timetuple())
-            # weather=pd.concat((past_weather, future_weather), ignore_index=True)
-            # times=np.transpose(self.epoch_to_date(np.asarray(weather.date)))
-            if past_present_future=='past':
-                weather = get_weather_past(start_date, end_date)
-            weather=pd.DataFrame([])
-            weather['year']=times[0]
-            weather['month']=times[1]
-            weather['day']=times[2]
-            weather=weather.drop(columns='date')
-            data=pd.DataFrame([])
-            data['tmin']=0
-            data['tmax']=0
-            data['wind']=0
-            data['rain']=0
-            for i in range(0, len(weather)):
-                #get rid of errors here...
-                cday=weather.day.iloc[i]
-                cmonth=weather.month.iloc[i]
-                cyear=weather.year.iloc[i]
-                index=list(data[data.day==cday][data.month==cmonth][data.year==cyear].index)
-                data['tmin'][index]=float(weather.iloc[i].tmin)
-                data['tmax'][index]=float(weather.iloc[i].tmax)
-                data['wind'][index]=float(weather.iloc[i].wind)
-                data['rain'][index]=float(weather.iloc[i].rain)
-                
-            return data
-    
-    
-    
-        weather_data=add_weather(n_days_back)
-        return weather_data
 
 path = r"E:\gasprice/"
 station_df=pd.read_csv(r"E:\gasprice/stations.csv")
-station=Station("51d4b4f2-a095-1aa0-e100-80009459e03a", station_df,path)
+station=Station("51d4b4f2-a095-1aa0-e100-80009459e03a", station_df)
     
     
